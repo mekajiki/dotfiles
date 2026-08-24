@@ -123,13 +123,25 @@ emit_shared_volume() {
 EOF
 }
 
-{
-  echo "name: ${project}"
-  echo "services:"
+services_body=`
   emit_service server      "$server_port"      3000
   emit_service mailcatcher "$mailcatcher_port" 1080
   emit_service yard        "$yard_port"        8808
   emit_service chrome      "$chrome_vnc_port"  5900
+`
+
+{
+  echo "name: ${project}"
+  if [ -n "$services_body" ]; then
+    echo "services:"
+    echo "$services_body"
+  else
+    # override 対象の service が base に無い repo では services が空になる。
+    # 値なしの "services:" は YAML では null になり compose が
+    # "services must be a mapping" で落ちるので、空 mapping を明示する。
+    # (project 名の分離だけでも mysql 等の container / volume が worktree 毎に分かれるので意味がある)
+    echo "services: {}"
+  fi
   if [ -n "$shared_volumes" ]; then
     echo "volumes:"
     for v in $shared_volumes; do
