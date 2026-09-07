@@ -78,4 +78,5 @@ OSを自動判定 (`macOS` / `Linux` / `WSL2`) し、冪等に以下を実行：
 - `src/claude-settings.local.json` — `~/.claude/settings.local.json` に symlink。Claude Code 本体が書き込まないため symlink 可、permissions / enabledPlugins / theme / hooks など dotfiles で同期したい設定をすべてここに置く（`settings.json` と Claude Code 側でマージされる）
 - `src/CLAUDE.md` — Claude Code 用のグローバル指示
 - `src/claude-hooks/` — Claude Code の SessionStart / SessionEnd で動かすシェルスクリプト（worktree 自動掃除など）
+- `src/claude-skills/` — Claude Code のスキル（`~/.claude/skills/` に symlink）。PR レビュー、Slack 読み書き、ディスク掃除（`/disk-cleanup`）
 - `docs/` — 設計文書
