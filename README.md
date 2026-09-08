@@ -54,7 +54,7 @@ OSを自動判定 (`macOS` / `Linux` / `WSL2`) し、冪等に以下を実行：
   ssh-keygen -t ed25519 -C "$(whoami)+$(hostname)" -f ~/.ssh/id_ed25519 -N ""
   gh ssh-key add ~/.ssh/id_ed25519.pub --title "$(hostname)"
   # 既存clone済みrepoはSSHに切替
-  git remote set-url origin git@github.com:Mekajiki/dotfiles.git
+  git remote set-url origin git@github.com:mekajiki/dotfiles.git
   ```
   `gh` を使うには別マシンで `admin:public_key` スコープ持ちの `gh auth login` 済みであることが前提。
 - **言語ランタイムの具体バージョン**

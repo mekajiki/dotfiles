@@ -1,7 +1,7 @@
 [user]
   name = Yuichiro NAKAGAWA
   email = ii.hsif.drows@gmail.com
-[url "git@github.com:Mekajiki/"]
+[url "git@github.com:mekajiki/"]
   insteadof = gh:
 [url "grg@mekajiki.net:/home/grg/repos/"]
   insteadof = mek:
