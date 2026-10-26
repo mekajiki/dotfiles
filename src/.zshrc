@@ -35,7 +35,7 @@ export TIMG_PIXELATION=k
 # Claude Code: anipos 配下は会社アカウント（CLAUDE_CONFIG_DIR=~/.claude-anipos），それ以外は個人（~/.claude）．
 # settings/memory/sessions/plugins/ログインが丸ごと分かれる．明示的に CLAUDE_CONFIG_DIR が設定済みならそれを尊重する．
 claude() {
-  if [[ -z "$CLAUDE_CONFIG_DIR" && "$PWD" == "$HOME/ghq/github.com/anipos/"* ]]; then
+  if [[ -z "$CLAUDE_CONFIG_DIR" && ( "$PWD" == "$HOME/ghq/github.com/anipos" || "$PWD" == "$HOME/ghq/github.com/anipos/"* ) ]]; then
     CLAUDE_CONFIG_DIR="$HOME/.claude-anipos" command claude "$@"
   else
     command claude "$@"
