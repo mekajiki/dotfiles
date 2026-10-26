@@ -41,6 +41,8 @@ claude() {
     command claude "$@"
   fi
 }
+# cw: ディレクトリに関係なく会社アカウント（~/.claude-anipos）で起動する．
+alias cw='CLAUDE_CONFIG_DIR=$HOME/.claude-anipos claude'
 
 #aliases
 #
