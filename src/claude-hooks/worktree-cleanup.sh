@@ -73,7 +73,31 @@ force_rmdir() {
   return 0
 }
 
-# branch の削除条件は worktree の削除条件と同じ (origin に無く merged PR がある) 。
+# default branch (origin/HEAD) 。取れなければ master。
+default_branch=$(git -C "$repo_root" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+[ -n "$default_branch" ] || default_branch=master
+
+# branch が「もう master に入っている」か。次のどちらかで真:
+#   (a) merged PR がある (squash merge 対応)
+#   (b) branch の全コミットが origin/<default> に patch 同値で含まれる
+#       (`git cherry` が "+" 行を出さない) 。PR を作らず worktree から直接
+#       origin/master に push する運用 (rebase して push / cherry-pick) はこちらで拾う。
+#       worktree を切っただけでコミットが無い branch も (b) で真になるので、
+#       呼び出し側で locked / dirty な worktree を先に除外すること。
+branch_is_merged() {
+  branch=$1
+  merged=$(cd "$repo_root" && gh pr list --state merged --head "$branch" --json number --limit 1 2>/dev/null)
+  if [ -n "$merged" ] && [ "$merged" != "[]" ]; then
+    return 0
+  fi
+  cherry=$(git -C "$repo_root" cherry "origin/$default_branch" "$branch" 2>/dev/null) || return 1
+  if printf '%s\n' "$cherry" | grep -q '^+'; then
+    return 1
+  fi
+  return 0
+}
+
+# branch の削除条件は worktree の削除条件と同じ (origin に無く master に取り込み済み) 。
 # worktree を消した後に呼ぶので、admin entry が prune 済みであることが前提。
 delete_branch_if_safe() {
   branch=$1
@@ -86,14 +110,21 @@ delete_branch_if_safe() {
   if git -C "$repo_root" ls-remote --heads origin "$branch" 2>/dev/null | grep -q .; then
     return 0
   fi
-  merged=$(cd "$repo_root" && gh pr list --state merged --head "$branch" --json number --limit 1 2>/dev/null)
-  if [ -z "$merged" ] || [ "$merged" = "[]" ]; then
-    return 0
-  fi
+  branch_is_merged "$branch" || return 0
   git -C "$repo_root" branch -D "$branch"
 }
 
 git -C "$repo_root" fetch --prune origin 2>/dev/null
+
+# main checkout を origin/<default> に追従させる。worktree から直接 origin/master に
+# push する運用では main checkout を誰も更新しないため、他セッションが「現状」として
+# 読む main が古くなる。default branch 上で追跡ファイルに変更が無いときだけ ff する。
+if [ "$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$default_branch" ] \
+   && [ -z "$(git -C "$repo_root" status --porcelain --untracked-files=no)" ]; then
+  if ! git -C "$repo_root" merge --ff-only --quiet "origin/$default_branch" 2>/dev/null; then
+    echo "worktree-cleanup: main checkout の $default_branch を origin/$default_branch に ff できず (ローカルに独自コミットがある)" >&2
+  fi
+fi
 
 # --- 1. 登録済みで不要になった worktree ---
 # branch 名は `git worktree list --porcelain` の `branch refs/heads/<name>` から取る。
@@ -101,24 +132,29 @@ git -C "$repo_root" fetch --prune origin 2>/dev/null
 # 作るので、dir basename を branch 名として扱うのは誤り。
 git -C "$repo_root" worktree list --porcelain \
   | awk '
-      /^worktree / { wt = $2; branch = "" }
-      /^branch refs\/heads\// { branch = substr($2, 12); print wt "|" branch }
+      /^worktree / { if (wt != "") print wt "|" branch "|" locked; wt = $2; branch = ""; locked = "" }
+      /^branch refs\/heads\// { branch = substr($2, 12) }
+      /^locked/ { locked = "locked" }
+      END { if (wt != "") print wt "|" branch "|" locked }
     ' \
-  | while IFS='|' read -r wt branch; do
+  | while IFS='|' read -r wt branch locked; do
       case "$wt" in
         "$wt_dir"/*) ;;
         *) continue ;;
       esac
       [ -z "$branch" ] && continue
+      # 使用中 (EnterWorktree は lock する) の worktree は触らない
+      [ "$locked" = "locked" ] && continue
+      # 未コミットの変更がある worktree も触らない (切った直後の空 branch を守る)
+      if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+        continue
+      fi
       # 条件A: origin にまだあるなら保護
       if git -C "$repo_root" ls-remote --heads origin "$branch" 2>/dev/null | grep -q .; then
         continue
       fi
-      # 条件B: merged PR が見つからなければ保護 (未push branch や WIP を守る)
-      merged=$(cd "$repo_root" && gh pr list --state merged --head "$branch" --json number --limit 1 2>/dev/null)
-      if [ -z "$merged" ] || [ "$merged" = "[]" ]; then
-        continue
-      fi
+      # 条件B: master に取り込み済み (merged PR または patch 同値) でなければ保護
+      branch_is_merged "$branch" || continue
       echo "worktree-cleanup: removing $wt (branch $branch)"
       compose_down "$(basename "$wt")"
       # locked のままだと prune が admin entry を残すので外す (locked でなければ

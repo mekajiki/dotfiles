@@ -11,7 +11,8 @@
 | host port 衝突（複数 worktree で `3000:3000` を取り合う） | `cl-setup.sh` が branch 名 hash から決定的に host port を算出し override にリテラルで埋め込む |
 | project 分離により volume も空になり、worktree ごとに `bundle install` / `yarn install` を待たされる | `cl-setup.sh` が install 系 volume（bundler / yarn）を main worktree のものに `external` で相乗りさせる |
 | `down` 忘れ・volume 残骸の蓄積 | `SessionEnd` フックで `docker compose down -v --remove-orphans`（override は auto-load される） |
-| merge 済み branch の worktree が残り続ける | `SessionStart` フックで「origin から消えた branch」の worktree を docker down + ディレクトリ削除 |
+| merge 済み branch の worktree が残り続ける | `SessionStart` フックで「origin に無く master に取り込み済み」の branch の worktree を docker down + ディレクトリ削除 |
+| worktree から直接 origin/master に push する運用で main checkout が古くなる | `SessionStart` フックで main checkout が clean な default branch 上なら `origin/<default>` に ff |
 | root 所有ファイルで削除に失敗し、git からも見えない孤児ディレクトリが溜まる | 削除をコンテナ経由（root）で行い、`git worktree list` に出ない残骸も走査して掃除 |
 
 ## スコープ外
@@ -46,8 +47,9 @@
    → SessionEnd フック: docker compose down -v --remove-orphans
 6. 別のセッションを起動 (どこかのリポルートで)
    → SessionStart フック: 当該リポの .claude/worktrees/ 配下を走査、
-     「origin にもう存在しない branch」の worktree を docker down + ディレクトリ削除
-     + worktree prune + branch -D。git から見えなくなった孤児ディレクトリも拾う
+     main checkout を origin/<default> に ff した後、「origin に無く master に取り込み済み」の
+     branch の worktree を docker down + ディレクトリ削除 + worktree prune + branch -D。
+     git から見えなくなった孤児ディレクトリも拾う
 ```
 
 Claude へのルール（「ファイル編集 or サーバ立ち上げが必要になったら `EnterWorktree` で worktree を切る」「`EnterWorktree` 直後に `cl-setup.sh` を呼ぶ」）はグローバル `~/.claude/CLAUDE.md`（dotfiles の `src/CLAUDE.md`）に記述してある。
@@ -149,16 +151,18 @@ compose v2 は base と同じ場所にある `<base>.override.<ext>` を自動�
 
 ### `SessionStart` ─ `~/.claude/hooks/worktree-cleanup.sh`
 
-Claude セッション開始時に発火。cwd が git リポなら `git fetch --prune origin` の後、3つの pass を順に走らせる。
+Claude セッション開始時に発火。cwd が git リポなら `git fetch --prune origin` し、main checkout が default branch 上で追跡ファイルに変更が無ければ `origin/<default>` に ff（worktree から直接 push する運用で main が古くなるのを防ぐ）。その後 3つの pass を順に走らせる。
 
 #### pass 1: 登録済みで不要になった worktree
 
 `.claude/worktrees/` 配下の worktree を列挙し（branch 名は `git worktree list --porcelain` の `branch refs/heads/<name>` から取得。Claude `EnterWorktree` は dir basename と異なる `worktree-<name>` を作るため）、以下を**両方**満たすものだけ掃除する:
 
 - **条件A**: `git ls-remote --heads origin <branch>` でヒットしない（origin に branch が存在しない）
-- **条件B**: `gh pr list --state merged --head <branch>` で merged PR が見つかる（squash merge 対応）
+- **条件B**: master に取り込み済み。次のどちらか
+  - `gh pr list --state merged --head <branch>` で merged PR が見つかる（squash merge 対応）
+  - `git cherry origin/<default> <branch>` が `+` 行を出さない（全コミットが patch 同値で master に入っている。PR を作らず rebase / cherry-pick で直接 push する運用向け）
 
-GitHub の "Automatically delete head branches" 設定が ON の前提。条件 B により未push の WIP branch（PR が無い）は保護される。`gh` CLI が無い／タイムアウト等の場合は条件 B が空判定になり保護側に倒れる。
+その前に、`locked` な worktree（`EnterWorktree` が使用中のもの）と、未コミットの変更がある worktree は無条件に保護する。切った直後でコミットが無い branch は条件 B の後者を満たしてしまうため。GitHub の "Automatically delete head branches" 設定が ON の前提。未push の WIP branch（master に無いコミットがある）は条件 B で保護される。`gh` CLI が無い／タイムアウト等の場合は PR 判定が空になり `git cherry` 側だけで判定する。
 
 掃除内容は compose のリソース削除 → ディレクトリ削除 → `git worktree prune`。branch は pass 3 で消す。
 
@@ -168,7 +172,7 @@ git に登録が無いのにディレクトリだけ残っているものを掃�
 
 #### pass 3: 取り残された branch
 
-worktree の有無と切り離して `refs/heads/worktree-*` を走査し、pass 1 と同じ条件（origin に無い AND merged PR がある）を満たすものを消す。孤児は admin entry が既に無く branch 名を辿れないので、worktree 側からは処理できないため。
+worktree の有無と切り離して `refs/heads/worktree-*` を走査し、pass 1 と同じ条件（origin に無い AND master に取り込み済み）を満たすものを消す。孤児は admin entry が既に無く branch 名を辿れないので、worktree 側からは処理できないため。
 
 #### なぜ `git worktree remove` を使わないか
 
@@ -211,11 +215,12 @@ branch 名の hash 由来なので確率は低いが 0 ではない。違う bra
 
 ### 自動掃除で消えない worktree / branch がある
 
-`SessionStart` フックは「origin に無い AND merged PR がある」を両方満たすときだけ削除する。以下のケースは保護される（=残る）:
-- 未push の WIP branch（PR が無いので merged PR ヒットせず）
-- まだ open な PR の branch（merged PR が空配列）
-- squash merge ではなく force-push リセット等で別履歴になった branch
-- `gh` がタイムアウトや認証エラーで失敗したケース
+`SessionStart` フックは「origin に無い AND master に取り込み済み（merged PR または `git cherry` で patch 同値）」を両方満たすときだけ削除する。以下のケースは保護される（=残る）:
+- 未push の WIP branch（master に無いコミットがある）
+- まだ open な PR の branch（origin に残っている）
+- `locked` な worktree と未コミットの変更がある worktree
+- 取り込み時に内容を手で書き換えた（conflict 解消等で patch が変わった）branch
+- `gh` がタイムアウトや認証エラーで失敗し、かつ `git cherry` でも同値にならないケース
 
 ディレクトリだけ消えて branch が残る場合もある（pass 2 で孤児ディレクトリを消しても、branch 側が上の条件を満たさなければ pass 3 で保護される）。コミット済みの内容は branch に残っているので失われてはいない。
 
