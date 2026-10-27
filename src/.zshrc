@@ -32,13 +32,13 @@ esac
 # timg をオプション無しで kitty graphics protocol 描画させる
 export TIMG_PIXELATION=k
 
-# Claude Code: anipos 配下は会社アカウント（CLAUDE_CONFIG_DIR=~/.claude-anipos），それ以外は個人（~/.claude）．
+# cl: Claude Code を起動．anipos 配下は会社アカウント（CLAUDE_CONFIG_DIR=~/.claude-anipos），それ以外は個人（~/.claude）．
 # settings/memory/sessions/plugins/ログインが丸ごと分かれる．明示的に CLAUDE_CONFIG_DIR が設定済みならそれを尊重する．
-claude() {
+cl() {
   if [[ -z "$CLAUDE_CONFIG_DIR" && ( "$PWD" == "$HOME/ghq/github.com/anipos" || "$PWD" == "$HOME/ghq/github.com/anipos/"* ) ]]; then
-    CLAUDE_CONFIG_DIR="$HOME/.claude-anipos" command claude "$@"
+    CLAUDE_CONFIG_DIR="$HOME/.claude-anipos" claude "$@"
   else
-    command claude "$@"
+    claude "$@"
   fi
 }
 # cw: ディレクトリに関係なく会社アカウント（~/.claude-anipos）で起動する．
