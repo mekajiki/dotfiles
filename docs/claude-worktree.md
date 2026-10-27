@@ -29,7 +29,7 @@
 ## 想定フロー
 
 ```
-1. terminal でリポルートに移動し claude を起動
+1. terminal でリポルートに移動し `cl` で Claude Code を起動（anipos 配下なら会社アカウント，それ以外は個人．詳細は `src/.zshrc` の `cl` 関数）
 2. ユーザー「XXX を実装して」と指示
 3. Claude:
    a. EnterWorktree('feature-xxx')
