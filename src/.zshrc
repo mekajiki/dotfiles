@@ -34,7 +34,11 @@ export TIMG_PIXELATION=k
 
 # cl: Claude Code を起動．anipos 配下は会社アカウント（CLAUDE_CONFIG_DIR=~/.claude-anipos），それ以外は個人（~/.claude）．
 # settings/memory/sessions/plugins/ログインが丸ごと分かれる．明示的に CLAUDE_CONFIG_DIR が設定済みならそれを尊重する．
+# 起動前に git pull する．失敗しても起動は止めない．
 cl() {
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git pull --ff-only || echo "cl: git pull に失敗．そのまま起動する" >&2
+  fi
   if [[ -z "$CLAUDE_CONFIG_DIR" && ( "$PWD" == "$HOME/ghq/github.com/anipos" || "$PWD" == "$HOME/ghq/github.com/anipos/"* ) ]]; then
     CLAUDE_CONFIG_DIR="$HOME/.claude-anipos" claude "$@"
   else
