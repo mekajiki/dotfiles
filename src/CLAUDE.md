@@ -1,5 +1,6 @@
 - コミットは常に許可を求めろや
 - コミットしてよいかユーザに確認するときは，差分を手元で確認できるように tuicr の確認コマンドを合わせて表示する．未コミットの変更は `cd <リポ or worktree の絶対パス> && tuicr -w`，コミット済みの範囲は `cd <絶対パス> && tuicr -r <base>..<head>`．
+  - tuicr のコマンドを提示したら，コミットの許可が出るまで `tuicr review comments --session <slug>` を5秒ごとに見るループを Monitor で回し，ユーザーの新しいコメントには `tuicr review add --session <slug> --username Claude` で同じ場所（`--target-file` / `--line`）に返信する．slug は `tuicr review list` で得る．
 - Bashツールで `$()` を使わないこと（毎回承認が必要になるため）．git commitは `-m "message"` で，gh pr createの--bodyも直接文字列で渡す．git pushとgh pr createは別々のコマンドとして実行する．
 - 本来エラーになるべき箇所でnullチェックして握りつぶすような過剰なエラー処理をしない．設定ミスやバグは早期に気付けるようにする．
 - linter向けの除外の追加は基本的に不可．長さ系だけは無意味な細切れにするよりは許容．それ以外で必要と判断した場合は勝手に足さず確認を取る．
