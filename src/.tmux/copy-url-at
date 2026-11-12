@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+# tmux の ctrl+click から呼ばれ、URL をクリップボードへ送る。
+#   copy-url-at <client> <hyperlink> <mouse_x> [mouse_line]
+# hyperlink(OSC 8 の飛び先)が空でなければそれを、空ならクリック位置(桁)にある http(s) URL を行から探して送る。
+# mouse_word は word-separators で ':' や '/' で切れてしまい URL を取れないため、行全体から URL を探す。
+# 引数は tmux 側で #{q:...} を「クォートで囲まずに」渡す(q は sh 向けに \ エスケープするため、"" で囲むと \ が残る)。
+# 空文字は q で引数ごと消えるので、hyperlink は "" を前置して必ず 1 引数にし、mouse_line は省略可にしている。
+# URL が無ければ exit 1(呼び出し側でクリックをアプリへ素通しする)。
+import re
+import subprocess
+import sys
+import unicodedata
+
+URL_RE = re.compile(r"https?://[^\s<>\"'`（）「」『』【】、。]+")
+TRAILING_PUNCT = ".,;:!?"
+
+
+def width(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+
+
+def trim(url):
+    url = url.rstrip(TRAILING_PUNCT)
+    # 文中の "(https://...)" の閉じ括弧を拾わない。URL 自体に対応する '(' があれば残す
+    while url.endswith(")") and url.count(")") > url.count("("):
+        url = url[:-1].rstrip(TRAILING_PUNCT)
+    return url
+
+
+def url_at(x, line):
+    for m in URL_RE.finditer(line):
+        url = trim(m.group(0))
+        start = width(line[: m.start()])
+        if start <= x < start + width(url):
+            return url
+    return None
+
+
+client, hyperlink, x = sys.argv[1], sys.argv[2], int(sys.argv[3])
+line = sys.argv[4] if len(sys.argv) > 4 else ""
+url = hyperlink or url_at(x, line)
+if url is None:
+    sys.exit(1)
+subprocess.run(["tmux", "set-buffer", "-w", "-t", client, "--", url], check=True)
+subprocess.run(["tmux", "display-message", "-l", "-c", client, "-d", "3000", f"Copied: {url[:80]}"], check=True)
